@@ -1,10 +1,10 @@
+use anyhow::anyhow;
+use anyhow::Result;
 use math::BInt;
 use paillier;
-use anyhow::Result;
-use anyhow::anyhow;
-use std::ops::{AddAssign, BitAnd, Mul, ShlAssign, SubAssign};
-use rug::{self, Integer, ops::Pow, Float, Rational};
+use rug::{self, ops::Pow, Float, Integer, Rational};
 use serde::{Deserialize, Serialize};
+use std::ops::{AddAssign, BitAnd, Mul, ShlAssign, SubAssign};
 
 mod frexp;
 
@@ -49,7 +49,6 @@ impl SK {
     }
 }
 
-
 /// fixedpoint encoder
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Coder {
@@ -76,22 +75,121 @@ impl Coder {
             exp: 0,
         }
     }
-    pub fn pack_floats(&self, floats: &Vec<f64>, offset_bit: usize, pack_num: usize, precision: u32) -> Vec<Plaintext> {
+
+    pub fn pack_floats(
+        &self,
+        floats: &Vec<f64>,
+        offset_bit: usize,
+        pack_num: usize,
+        precision: u32,
+    ) -> Vec<Plaintext> {
         let int_scale = Integer::from(2).pow(precision);
-        floats.chunks(pack_num).map(|data| {
-            let significant = data.iter().fold(Integer::default(), |mut x, v| {
-                x.shl_assign(offset_bit);
-                x.add_assign(Float::with_val(64, v).mul(&int_scale).round().to_integer().unwrap());
-                x
-            });
-            Plaintext {
-                significant: paillier::PT(BInt(significant)),
-                exp: 0,
-            }
-        })
+        floats
+            .chunks(pack_num)
+            .map(|data| {
+                let significant = data.iter().fold(Integer::default(), |mut x, v| {
+                    x.shl_assign(offset_bit);
+                    x.add_assign(
+                        Float::with_val(64, v)
+                            .mul(&int_scale)
+                            .round()
+                            .to_integer()
+                            .unwrap(),
+                    );
+                    x
+                });
+                Plaintext {
+                    significant: paillier::PT(BInt(significant)),
+                    exp: 0,
+                }
+            })
             .collect()
     }
-    pub fn unpack_floats(&self, encoded: &[Plaintext], offset_bit: usize, pack_num: usize, precision: u32, expect_total_num: usize) -> Vec<f64> {
+
+    // ozr added.
+    pub fn pack_i32s(
+        &self,
+        integers: &Vec<i32>,
+        offset_bit: usize,
+        pack_num: usize,
+    ) -> Vec<Plaintext> {
+        // offset_bit = padding_bit + sign_bit + i32_bit (i.e. 32)
+
+        let sign_base = Integer::from(2).pow(32);
+
+        integers
+            .chunks(pack_num)
+            .map(|data| {
+                let significant = data.iter().fold(Integer::default(), |mut x, v| {
+                    x.shl_assign(offset_bit);
+                    x.add_assign(if v < &0 {
+                        Integer::from(v + &sign_base)
+                    } else {
+                        Integer::from(v.clone())
+                    });
+                    x
+                });
+                Plaintext {
+                    significant: paillier::PT(BInt(significant)),
+                    exp: 0,
+                }
+            })
+            .collect()
+    }
+
+    // ozr added
+    pub fn unpack_i32s(
+        &self,
+        encoded: &[Plaintext],
+        offset_bit: usize,
+        pack_num: usize,
+        expect_total_num: usize,
+    ) -> Vec<i32> {
+        // offset_bit = padding_bit + sign_bit + i32_bit (i.e. 32)
+        let int_base = Integer::from(2).pow(32);
+
+        let mut mask = Integer::from(1);
+        mask <<= offset_bit;
+        mask.sub_assign(1);
+
+        let mut result = Vec::with_capacity(expect_total_num);
+        let mut total_num = expect_total_num;
+        for x in encoded {
+            let n = std::cmp::min(total_num, pack_num);
+            let mut significant = x.significant.0 .0.clone();
+            let mut temp = Vec::with_capacity(n);
+            for _ in 0..n {
+                let mut value = Integer::from((&significant).bitand(&mask));
+
+                // well ... It seems that the decoding procedure is a bit trouble some ...
+                // NOTE(ozr): naive approach, overlook all overflows ...
+
+                match value.cmp(&int_base) {
+                    std::cmp::Ordering::Less => (),
+                    _ => value -= &int_base,
+                }
+
+                temp.push(value.to_i32().unwrap());
+                significant >>= offset_bit;
+            }
+            temp.reverse();
+            result.extend(temp);
+            total_num -= n;
+        }
+        #[cfg(debug_assertions)]
+        assert_eq!(result.len(), expect_total_num);
+
+        result
+    }
+
+    pub fn unpack_floats(
+        &self,
+        encoded: &[Plaintext],
+        offset_bit: usize,
+        pack_num: usize,
+        precision: u32,
+        expect_total_num: usize,
+    ) -> Vec<f64> {
         let int_scale = Integer::from(2).pow(precision);
         let mut mask = Integer::from(1);
         mask <<= offset_bit;
@@ -100,7 +198,7 @@ impl Coder {
         let mut total_num = expect_total_num;
         for x in encoded {
             let n = std::cmp::min(total_num, pack_num);
-            let mut significant = x.significant.0.0.clone();
+            let mut significant = x.significant.0 .0.clone();
             let mut temp = Vec::with_capacity(n);
             for _ in 0..n {
                 let value = Rational::from(((&significant).bitand(&mask), &int_scale)).to_f64();
@@ -116,6 +214,7 @@ impl Coder {
 
         result
     }
+
     pub fn encode_i32(&self, plaintext: i32) -> Plaintext {
         let significant = paillier::PT(if plaintext < 0 {
             BInt::from(&self.n + plaintext)
@@ -233,7 +332,6 @@ impl CouldCode for f32 {
     }
 }
 
-
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Ciphertext {
     pub significant_encryped: paillier::CT,
@@ -300,10 +398,10 @@ impl Ciphertext {
 
     pub fn add(&self, b: &Ciphertext, pk: &PK) -> Ciphertext {
         let a = self;
-        if a.significant_encryped.0.0 == 1 {
+        if a.significant_encryped.0 .0 == 1 {
             return b.clone();
         }
-        if b.significant_encryped.0.0 == 1 {
+        if b.significant_encryped.0 .0 == 1 {
             return a.clone();
         }
         if a.exp > b.exp {
@@ -349,7 +447,6 @@ impl Ciphertext {
     }
 }
 
-
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct CiphertextVector {
     pub data: Vec<Ciphertext>,
@@ -375,7 +472,10 @@ impl PK {
         let data = plaintext
             .data
             .iter()
-            .map(|x| Ciphertext { significant_encryped: self.pk.encrypt(&x.significant, obfuscate), exp: x.exp })
+            .map(|x| Ciphertext {
+                significant_encryped: self.pk.encrypt(&x.significant, obfuscate),
+                exp: x.exp,
+            })
             .collect();
         CiphertextVector { data }
     }
@@ -387,14 +487,16 @@ impl PK {
     }
 }
 
-
 impl SK {
     pub fn decrypt_to_encoded(&self, data: &CiphertextVector) -> PlaintextVector {
-        let data = data.data.iter().map(|x| Plaintext {
-            significant:
-            self.sk.decrypt(&x.significant_encryped),
-            exp: x.exp,
-        }).collect();
+        let data = data
+            .data
+            .iter()
+            .map(|x| Plaintext {
+                significant: self.sk.decrypt(&x.significant_encryped),
+                exp: x.exp,
+            })
+            .collect();
         PlaintextVector { data }
     }
     pub fn decrypt_to_encoded_scalar(&self, data: &Ciphertext) -> Plaintext {
@@ -409,7 +511,14 @@ pub fn keygen(bit_length: u32) -> (SK, PK, Coder) {
     let (sk, pk) = paillier::keygen(bit_length);
     let coder = Coder::new(&pk.n);
     let max_int = &pk.n / MAX_INT_FRACTION;
-    (SK { sk }, PK { pk: pk, max_int: max_int }, coder)
+    (
+        SK { sk },
+        PK {
+            pk: pk,
+            max_int: max_int,
+        },
+        coder,
+    )
 }
 
 impl CiphertextVector {
@@ -438,14 +547,21 @@ impl CiphertextVector {
 
     pub fn pack_squeeze(&self, pk: &PK, pack_num: usize, shift_bit: u32) -> CiphertextVector {
         let base = BInt::from(2).pow(shift_bit);
-        let data = self.data.chunks(pack_num).map(|x| {
-            let mut result = x[0].significant_encryped.0.clone();
-            for y in &x[1..] {
-                result.pow_mod_mut(&base, &pk.pk.ns);
-                result = result.mul(&y.significant_encryped.0) % &pk.pk.ns;
-            }
-            Ciphertext { significant_encryped: paillier::CT(result), exp: 0 }
-        }).collect();
+        let data = self
+            .data
+            .chunks(pack_num)
+            .map(|x| {
+                let mut result = x[0].significant_encryped.0.clone();
+                for y in &x[1..] {
+                    result.pow_mod_mut(&base, &pk.pk.ns);
+                    result = result.mul(&y.significant_encryped.0) % &pk.pk.ns;
+                }
+                Ciphertext {
+                    significant_encryped: paillier::CT(result),
+                    exp: 0,
+                }
+            })
+            .collect();
         CiphertextVector { data }
     }
 
@@ -595,7 +711,9 @@ impl CiphertextVector {
                     .iter_mut()
                     .for_each(|x| *x = Ciphertext::zero());
             } else {
-                self.data[sa..].iter_mut().for_each(|x| *x = Ciphertext::zero());
+                self.data[sa..]
+                    .iter_mut()
+                    .for_each(|x| *x = Ciphertext::zero());
             }
         } else if sa < sb {
             // it's safe to update from left to right
@@ -662,9 +780,7 @@ impl CiphertextVector {
                 self.data[sa..ea]
                     .iter_mut()
                     .zip(other.data[sb..eb].iter())
-                    .for_each(|(x, y)| {
-                        x.add_assign(y, &pk)
-                    });
+                    .for_each(|(x, y)| x.add_assign(y, &pk));
             }
             None => {
                 self.data[sa..]
@@ -707,9 +823,7 @@ impl CiphertextVector {
                 self.data[sa..ea]
                     .iter_mut()
                     .zip(other.data[sb..eb].iter())
-                    .for_each(|(x, y)| {
-                        x.sub_assign(y, &pk)
-                    });
+                    .for_each(|(x, y)| x.sub_assign(y, &pk));
             }
             None => {
                 self.data[sa..]
@@ -721,7 +835,13 @@ impl CiphertextVector {
         Ok(())
     }
 
-    pub fn iupdate(&mut self, other: &CiphertextVector, indexes: Vec<Vec<usize>>, stride: usize, pk: &PK) -> Result<()> {
+    pub fn iupdate(
+        &mut self,
+        other: &CiphertextVector,
+        indexes: Vec<Vec<usize>>,
+        stride: usize,
+        pk: &PK,
+    ) -> Result<()> {
         for (i, x) in indexes.iter().enumerate() {
             let sb = i * stride;
             for pos in x.iter() {
@@ -733,8 +853,21 @@ impl CiphertextVector {
         }
         Ok(())
     }
-    pub fn iupdate_with_masks(&mut self, other: &CiphertextVector, indexes: Vec<Vec<usize>>, masks: Vec<bool>, stride: usize, pk: &PK) -> Result<()> {
-        for (value_pos, x) in masks.iter().enumerate().filter(|(_, &mask)| mask).map(|(i, _)| i).zip(indexes.iter()) {
+    pub fn iupdate_with_masks(
+        &mut self,
+        other: &CiphertextVector,
+        indexes: Vec<Vec<usize>>,
+        masks: Vec<bool>,
+        stride: usize,
+        pk: &PK,
+    ) -> Result<()> {
+        for (value_pos, x) in masks
+            .iter()
+            .enumerate()
+            .filter(|(_, &mask)| mask)
+            .map(|(i, _)| i)
+            .zip(indexes.iter())
+        {
             let sb = value_pos * stride;
             for pos in x.iter() {
                 let sa = pos * stride;
@@ -791,7 +924,12 @@ impl CiphertextVector {
     }
 
     pub fn tolist(&self) -> Vec<CiphertextVector> {
-        self.data.iter().map(|x| CiphertextVector { data: vec![x.clone()] }).collect()
+        self.data
+            .iter()
+            .map(|x| CiphertextVector {
+                data: vec![x.clone()],
+            })
+            .collect()
     }
 
     pub fn add(&self, pk: &PK, other: &CiphertextVector) -> CiphertextVector {
@@ -850,11 +988,7 @@ impl CiphertextVector {
     }
 
     pub fn mul_scalar(&self, pk: &PK, other: &Plaintext) -> CiphertextVector {
-        let data = self
-            .data
-            .iter()
-            .map(|x| x.mul(&other, &pk))
-            .collect();
+        let data = self.data.iter().map(|x| x.mul(&other, &pk)).collect();
         CiphertextVector { data }
     }
 
@@ -916,9 +1050,6 @@ impl PlaintextVector {
         PlaintextVector { data }
     }
     pub fn tolist(&self) -> Vec<Plaintext> {
-        self.data
-            .iter()
-            .map(|x| x.clone())
-            .collect()
+        self.data.iter().map(|x| x.clone()).collect()
     }
 }

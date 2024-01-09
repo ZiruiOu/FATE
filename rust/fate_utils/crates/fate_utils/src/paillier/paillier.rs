@@ -142,6 +142,59 @@ impl Coder {
     fn unpack_floats(&self, packed: &PlaintextVector, offset_bit: usize, pack_num: usize, precision: u32, total_num: usize) -> Vec<f64> {
         self.0.unpack_floats(&packed.0.data, offset_bit, pack_num, precision, total_num)
     }
+
+    // ozr added
+    fn pack_i32s(&self, int_tensor: Vec<i32>, offset_bit: usize, pack_num: usize) -> PlaintextVector {
+        let data = self.0.pack_i32s(&float_tensor, offset_bit, pack_num);
+        PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
+    }
+
+    // ozr added
+    fn unpack_i32s(&self, packed: &PlaintextVector, offset_bit: usize, pack_num: usize, total_num: usize) -> Vec<i32> {
+        self.0.unpack_floats(&packed.0.data, offset_bit, pack_num, total_num)
+    }
+
+    
+    fn encode_f64_vec(&self, data: PyReadonlyArray1<f64>) -> PlaintextVector {
+        let data = data
+            .as_array()
+            .iter()
+            .map(|x| self.0.encode_f64(*x))
+            .collect();
+        PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
+    }
+    fn decode_f64_vec<'py>(&self, data: &PlaintextVector, py: Python<'py>) -> &'py PyArray1<f64> {
+        Array1::from(
+            data.0.data
+                .iter()
+                .map(|x| self.0.decode_f64(x))
+                .collect::<Vec<f64>>(),
+        )
+            .into_pyarray(py)
+    }
+    fn encode_f32_vec(&self, data: PyReadonlyArray1<f32>) -> PlaintextVector {
+        let data = data
+            .as_array()
+            .iter()
+            .map(|x| self.0.encode_f32(*x))
+            .collect();
+        PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
+    }
+    fn decode_f32(&self, data: &Plaintext) -> f32 {
+        self.0.decode_f32(&data.0)
+    }
+    fn decode_f32_vec<'py>(&self, data: &PlaintextVector, py: Python<'py>) -> &'py PyArray1<f32> {
+        Array1::from(
+            data.0.data
+                .iter()
+                .map(|x| self.0.decode_f32(x))
+                .collect::<Vec<f32>>(),
+        )
+            .into_pyarray(py)
+
+    fn unpack_floats(&self, packed: &PlaintextVector, offset_bit: usize, pack_num: usize, precision: u32, total_num: usize) -> Vec<f64> {
+        self.0.unpack_floats(&packed.0.data, offset_bit, pack_num, precision, total_num)
+    }
     fn encode_f64_vec(&self, data: PyReadonlyArray1<f64>) -> PlaintextVector {
         let data = data
             .as_array()
