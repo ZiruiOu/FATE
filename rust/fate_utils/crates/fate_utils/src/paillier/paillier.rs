@@ -1,8 +1,8 @@
+use anyhow::Error as AnyhowError;
 use ndarray::prelude::*;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use anyhow::Error as AnyhowError;
 
 trait ToPyErr {
     fn to_py_err(self) -> PyErr;
@@ -13,7 +13,6 @@ impl ToPyErr for AnyhowError {
         PyRuntimeError::new_err(self.to_string())
     }
 }
-
 
 #[pyclass(module = "fate_utils.paillier")]
 #[derive(Default)]
@@ -134,27 +133,54 @@ impl Coder {
         Ok(())
     }
 
-    fn pack_floats(&self, float_tensor: Vec<f64>, offset_bit: usize, pack_num: usize, precision: u32) -> PlaintextVector {
-        let data = self.0.pack_floats(&float_tensor, offset_bit, pack_num, precision);
+    fn pack_floats(
+        &self,
+        float_tensor: Vec<f64>,
+        offset_bit: usize,
+        pack_num: usize,
+        precision: u32,
+    ) -> PlaintextVector {
+        let data = self
+            .0
+            .pack_floats(&float_tensor, offset_bit, pack_num, precision);
         PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
     }
 
-    fn unpack_floats(&self, packed: &PlaintextVector, offset_bit: usize, pack_num: usize, precision: u32, total_num: usize) -> Vec<f64> {
-        self.0.unpack_floats(&packed.0.data, offset_bit, pack_num, precision, total_num)
+    fn unpack_floats(
+        &self,
+        packed: &PlaintextVector,
+        offset_bit: usize,
+        pack_num: usize,
+        precision: u32,
+        total_num: usize,
+    ) -> Vec<f64> {
+        self.0
+            .unpack_floats(&packed.0.data, offset_bit, pack_num, precision, total_num)
     }
 
     // ozr added
-    fn pack_i32s(&self, int_tensor: Vec<i32>, offset_bit: usize, pack_num: usize) -> PlaintextVector {
-        let data = self.0.pack_i32s(&float_tensor, offset_bit, pack_num);
+    fn pack_i32s(
+        &self,
+        int_tensor: Vec<i32>,
+        offset_bit: usize,
+        pack_num: usize,
+    ) -> PlaintextVector {
+        let data = self.0.pack_i32s(&int_tensor, offset_bit, pack_num);
         PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
     }
 
     // ozr added
-    fn unpack_i32s(&self, packed: &PlaintextVector, offset_bit: usize, pack_num: usize, total_num: usize) -> Vec<i32> {
-        self.0.unpack_floats(&packed.0.data, offset_bit, pack_num, total_num)
+    fn unpack_i32s(
+        &self,
+        packed: &PlaintextVector,
+        offset_bit: usize,
+        pack_num: usize,
+        total_num: usize,
+    ) -> Vec<i32> {
+        self.0
+            .unpack_i32s(&packed.0.data, offset_bit, pack_num, total_num)
     }
 
-    
     fn encode_f64_vec(&self, data: PyReadonlyArray1<f64>) -> PlaintextVector {
         let data = data
             .as_array()
@@ -165,12 +191,13 @@ impl Coder {
     }
     fn decode_f64_vec<'py>(&self, data: &PlaintextVector, py: Python<'py>) -> &'py PyArray1<f64> {
         Array1::from(
-            data.0.data
+            data.0
+                .data
                 .iter()
                 .map(|x| self.0.decode_f64(x))
                 .collect::<Vec<f64>>(),
         )
-            .into_pyarray(py)
+        .into_pyarray(py)
     }
     fn encode_f32_vec(&self, data: PyReadonlyArray1<f32>) -> PlaintextVector {
         let data = data
@@ -185,52 +212,13 @@ impl Coder {
     }
     fn decode_f32_vec<'py>(&self, data: &PlaintextVector, py: Python<'py>) -> &'py PyArray1<f32> {
         Array1::from(
-            data.0.data
+            data.0
+                .data
                 .iter()
                 .map(|x| self.0.decode_f32(x))
                 .collect::<Vec<f32>>(),
         )
-            .into_pyarray(py)
-
-    fn unpack_floats(&self, packed: &PlaintextVector, offset_bit: usize, pack_num: usize, precision: u32, total_num: usize) -> Vec<f64> {
-        self.0.unpack_floats(&packed.0.data, offset_bit, pack_num, precision, total_num)
-    }
-    fn encode_f64_vec(&self, data: PyReadonlyArray1<f64>) -> PlaintextVector {
-        let data = data
-            .as_array()
-            .iter()
-            .map(|x| self.0.encode_f64(*x))
-            .collect();
-        PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
-    }
-    fn decode_f64_vec<'py>(&self, data: &PlaintextVector, py: Python<'py>) -> &'py PyArray1<f64> {
-        Array1::from(
-            data.0.data
-                .iter()
-                .map(|x| self.0.decode_f64(x))
-                .collect::<Vec<f64>>(),
-        )
-            .into_pyarray(py)
-    }
-    fn encode_f32_vec(&self, data: PyReadonlyArray1<f32>) -> PlaintextVector {
-        let data = data
-            .as_array()
-            .iter()
-            .map(|x| self.0.encode_f32(*x))
-            .collect();
-        PlaintextVector(fixedpoint_paillier::PlaintextVector { data })
-    }
-    fn decode_f32(&self, data: &Plaintext) -> f32 {
-        self.0.decode_f32(&data.0)
-    }
-    fn decode_f32_vec<'py>(&self, data: &PlaintextVector, py: Python<'py>) -> &'py PyArray1<f32> {
-        Array1::from(
-            data.0.data
-                .iter()
-                .map(|x| self.0.decode_f32(x))
-                .collect::<Vec<f32>>(),
-        )
-            .into_pyarray(py)
+        .into_pyarray(py)
     }
     fn encode_i64_vec(&self, data: PyReadonlyArray1<i64>) -> PlaintextVector {
         let data = data
@@ -266,7 +254,9 @@ fn keygen(bit_length: u32) -> (SK, PK, Coder) {
 impl CiphertextVector {
     #[new]
     fn __new__() -> PyResult<Self> {
-        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector { data: vec![] }))
+        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector {
+            data: vec![],
+        }))
     }
 
     fn __getstate__(&self) -> PyResult<Vec<u8>> {
@@ -288,11 +278,20 @@ impl CiphertextVector {
 
     #[staticmethod]
     pub fn zeros(size: usize) -> PyResult<Self> {
-        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector::zeros(size)))
+        Ok(CiphertextVector(
+            fixedpoint_paillier::CiphertextVector::zeros(size),
+        ))
     }
 
-    pub fn pack_squeeze(&self, pack_num: usize, offset_bit: u32, pk: &PK) -> PyResult<CiphertextVector> {
-        Ok(CiphertextVector(self.0.pack_squeeze(&pk.0, pack_num, offset_bit)))
+    pub fn pack_squeeze(
+        &self,
+        pack_num: usize,
+        offset_bit: u32,
+        pk: &PK,
+    ) -> PyResult<CiphertextVector> {
+        Ok(CiphertextVector(
+            self.0.pack_squeeze(&pk.0, pack_num, offset_bit),
+        ))
     }
 
     fn slice(&mut self, start: usize, size: usize) -> CiphertextVector {
@@ -303,7 +302,9 @@ impl CiphertextVector {
         Ok(CiphertextVector(self.0.slice_indexes(indexes)))
     }
     pub fn cat(&self, others: Vec<PyRef<CiphertextVector>>) -> PyResult<Self> {
-        Ok(CiphertextVector(self.0.cat(others.iter().map(|x| &x.0).collect())))
+        Ok(CiphertextVector(
+            self.0.cat(others.iter().map(|x| &x.0).collect()),
+        ))
     }
     fn i_shuffle(&mut self, indexes: Vec<usize>) {
         self.0.i_shuffle(indexes);
@@ -313,10 +314,15 @@ impl CiphertextVector {
         Ok(CiphertextVector(self.0.shuffle(indexes)))
     }
     fn intervals_slice(&mut self, intervals: Vec<(usize, usize)>) -> PyResult<Self> {
-        Ok(CiphertextVector(self.0.intervals_slice(intervals).map_err(|e| e.to_py_err())?))
+        Ok(CiphertextVector(
+            self.0
+                .intervals_slice(intervals)
+                .map_err(|e| e.to_py_err())?,
+        ))
     }
     fn iadd_slice(&mut self, pk: &PK, position: usize, other: Vec<PyRef<Ciphertext>>) {
-        self.0.iadd_slice(&pk.0, position, other.iter().map(|x| &x.0).collect());
+        self.0
+            .iadd_slice(&pk.0, position, other.iter().map(|x| &x.0).collect());
     }
     fn iadd_vec_self(
         &mut self,
@@ -325,7 +331,9 @@ impl CiphertextVector {
         size: Option<usize>,
         pk: &PK,
     ) -> PyResult<()> {
-        self.0.iadd_vec_self(sa, sb, size, &pk.0).map_err(|e| e.to_py_err())?;
+        self.0
+            .iadd_vec_self(sa, sb, size, &pk.0)
+            .map_err(|e| e.to_py_err())?;
         Ok(())
     }
     fn isub_vec_self(
@@ -335,7 +343,9 @@ impl CiphertextVector {
         size: Option<usize>,
         pk: &PK,
     ) -> PyResult<()> {
-        self.0.isub_vec_self(sa, sb, size, &pk.0).map_err(|e| e.to_py_err())?;
+        self.0
+            .isub_vec_self(sa, sb, size, &pk.0)
+            .map_err(|e| e.to_py_err())?;
         Ok(())
     }
 
@@ -347,7 +357,9 @@ impl CiphertextVector {
         size: Option<usize>,
         pk: &PK,
     ) -> PyResult<()> {
-        self.0.iadd_vec(&other.0, sa, sb, size, &pk.0).map_err(|e| e.to_py_err())?;
+        self.0
+            .iadd_vec(&other.0, sa, sb, size, &pk.0)
+            .map_err(|e| e.to_py_err())?;
         Ok(())
     }
 
@@ -359,16 +371,35 @@ impl CiphertextVector {
         size: Option<usize>,
         pk: &PK,
     ) -> PyResult<()> {
-        self.0.isub_vec(&other.0, sa, sb, size, &pk.0).map_err(|e| e.to_py_err())?;
+        self.0
+            .isub_vec(&other.0, sa, sb, size, &pk.0)
+            .map_err(|e| e.to_py_err())?;
         Ok(())
     }
 
-    fn iupdate(&mut self, other: &CiphertextVector, indexes: Vec<Vec<usize>>, stride: usize, pk: &PK) -> PyResult<()> {
-        self.0.iupdate(&other.0, indexes, stride, &pk.0).map_err(|e| e.to_py_err())?;
+    fn iupdate(
+        &mut self,
+        other: &CiphertextVector,
+        indexes: Vec<Vec<usize>>,
+        stride: usize,
+        pk: &PK,
+    ) -> PyResult<()> {
+        self.0
+            .iupdate(&other.0, indexes, stride, &pk.0)
+            .map_err(|e| e.to_py_err())?;
         Ok(())
     }
-    fn iupdate_with_masks(&mut self, other: &CiphertextVector, indexes: Vec<Vec<usize>>, masks: Vec<bool>, stride: usize, pk: &PK) -> PyResult<()> {
-        self.0.iupdate_with_masks(&other.0, indexes, masks, stride, &pk.0).map_err(|e| e.to_py_err())?;
+    fn iupdate_with_masks(
+        &mut self,
+        other: &CiphertextVector,
+        indexes: Vec<Vec<usize>>,
+        masks: Vec<bool>,
+        stride: usize,
+        pk: &PK,
+    ) -> PyResult<()> {
+        self.0
+            .iupdate_with_masks(&other.0, indexes, masks, stride, &pk.0)
+            .map_err(|e| e.to_py_err())?;
         Ok(())
     }
     fn iadd(&mut self, pk: &PK, other: &CiphertextVector) {
@@ -390,7 +421,11 @@ impl CiphertextVector {
     }
 
     fn tolist(&self) -> Vec<CiphertextVector> {
-        self.0.tolist().iter().map(|x| CiphertextVector(x.clone())).collect()
+        self.0
+            .tolist()
+            .iter()
+            .map(|x| CiphertextVector(x.clone()))
+            .collect()
     }
 
     fn add(&self, pk: &PK, other: &CiphertextVector) -> CiphertextVector {
@@ -443,7 +478,9 @@ impl CiphertextVector {
 impl PlaintextVector {
     #[new]
     fn __new__() -> PyResult<Self> {
-        Ok(PlaintextVector(fixedpoint_paillier::PlaintextVector { data: vec![] }))
+        Ok(PlaintextVector(fixedpoint_paillier::PlaintextVector {
+            data: vec![],
+        }))
     }
     fn __getstate__(&self) -> PyResult<Vec<u8>> {
         Ok(bincode::serialize(&self.0).unwrap())
@@ -460,7 +497,11 @@ impl PlaintextVector {
         PlaintextVector(self.0.get_stride(index, stride))
     }
     fn tolist(&self) -> Vec<Plaintext> {
-        self.0.tolist().iter().map(|x| Plaintext(x.clone())).collect()
+        self.0
+            .tolist()
+            .iter()
+            .map(|x| Plaintext(x.clone()))
+            .collect()
     }
 }
 
@@ -472,7 +513,9 @@ impl Evaluator {
         for vec in vec_list {
             data.extend(vec.0.data.clone());
         }
-        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector { data }))
+        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector {
+            data,
+        }))
     }
     #[staticmethod]
     fn slice_indexes(a: &CiphertextVector, indexes: Vec<usize>) -> PyResult<CiphertextVector> {
@@ -480,7 +523,9 @@ impl Evaluator {
             .iter()
             .map(|i| a.0.data[*i].clone())
             .collect::<Vec<_>>();
-        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector { data }))
+        Ok(CiphertextVector(fixedpoint_paillier::CiphertextVector {
+            data,
+        }))
     }
 }
 
